@@ -1,4 +1,4 @@
-# HealthTrack Application
+# Health History Application
 
 This application consists of a Next.js frontend and an Express.js backend for managing patient health histories.
 
