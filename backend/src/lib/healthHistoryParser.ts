@@ -47,43 +47,11 @@ interface GenericHealthRecord {
   [key: string]: any;
 }
 
-const fieldMappings = {
-  conditions: {
-    name: ['name', 'conditionName', 'diagnosis'],
-    diagnosedDate: ['diagnosedDate', 'dateOfDiagnosis'],
-    status: ['status', 'conditionStatus'],
-    startDate: ['startDate', 'onsetDate'],
-    endDate: ['endDate', 'resolutionDate']
-  },
-  allergies: {
-    name: ['name', 'allergyName'],
-    severity: ['severity', 'allergySeverity'],
-    reaction: ['reaction', 'allergyReaction']
-  },
-  procedures: {
-    name: ['name', 'procedureName'],
-    date: ['date', 'procedureDate'],
-    category: ['category', 'procedureCategory'],
-    startDate: ['startDate'],
-    endDate: ['endDate']
-  },
-  medications: {
-    name: ['name', 'medicationName'],
-    dosage: ['dosage', 'medicationDosage'],
-    frequency: ['frequency', 'medicationFrequency'],
-    startDate: ['startDate'],
-    endDate: ['endDate']
-  }
-};
+const GenericItemSchema = z.record(z.unknown());
 
 const HealthHistorySchema = z.object({
   patientId: z.string(),
-  healthHistory: z.object({
-    conditions: z.array(z.record(z.unknown())),
-    allergies: z.array(z.record(z.unknown())),
-    procedures: z.array(z.record(z.unknown())),
-    medications: z.array(z.record(z.unknown()))
-  }).and(z.record(z.unknown())) // Allow additional fields
+  healthHistory: z.record(z.array(GenericItemSchema))
 });
 
 function normalizeDate(date: string | null): string | null {
@@ -132,7 +100,6 @@ function parseHealthHistoryItem(item: any, categoryMappings: Record<string, stri
   for (const [key, value] of Object.entries(item)) {
     if (!(key in parsedItem)) {
       parsedItem[key] = value;
-      logger.info(`New field encountered: ${key} in category ${categoryMappings.name[0]}`);
     }
   }
 
@@ -149,34 +116,53 @@ export function parseHealthHistory(data: unknown, version: string = 'v1'): Parse
     
     const parsedData: ParsedHealthHistory = {
       patientId: validatedData.patientId,
-      healthHistory: {
-        conditions: [],
-        allergies: [],
-        procedures: [],
-        medications: []
+      healthHistory: {} as HealthHistory
+    };
+
+    // Dynamic field mappings
+    const dynamicFieldMappings: Record<string, Record<string, string[]>> = {
+      conditions: {
+        name: ['name', 'conditionName', 'diagnosis'],
+        diagnosedDate: ['diagnosedDate', 'dateOfDiagnosis'],
+        status: ['status', 'conditionStatus'],
+        startDate: ['startDate', 'onsetDate'],
+        endDate: ['endDate', 'resolutionDate']
+      },
+      allergies: {
+        name: ['name', 'allergyName'],
+        severity: ['severity', 'allergySeverity'],
+        reaction: ['reaction', 'allergyReaction']
+      },
+      procedures: {
+        name: ['name', 'procedureName'],
+        date: ['date', 'procedureDate'],
+        category: ['category', 'procedureCategory'],
+        startDate: ['startDate'],
+        endDate: ['endDate']
+      },
+      medications: {
+        name: ['name', 'medicationName'],
+        dosage: ['dosage', 'medicationDosage'],
+        frequency: ['frequency', 'medicationFrequency'],
+        startDate: ['startDate'],
+        endDate: ['endDate']
       }
     };
 
-    // Parse known categories
-    for (const category of ['conditions', 'allergies', 'procedures', 'medications'] as const) {
-      parsedData.healthHistory[category] = validatedData.healthHistory[category]
-        .map(item => parseHealthHistoryItem(item, fieldMappings[category]))
+    // Parse all categories dynamically
+    for (const [category, items] of Object.entries(validatedData.healthHistory)) {
+      const categoryMappings = dynamicFieldMappings[category] || {};
+      parsedData.healthHistory[category as keyof HealthHistory] = items
+        .map(item => parseHealthHistoryItem(item, categoryMappings))
         .filter(item => item.name && item.name !== "JUNK DATA");
-    }
 
-    // Handle any additional categories
-    for (const [key, value] of Object.entries(validatedData.healthHistory)) {
-      if (!['conditions', 'allergies', 'procedures', 'medications'].includes(key)) {
-        if (Array.isArray(value)) {
-          (parsedData.healthHistory as any)[key] = value.map(item => parseHealthHistoryItem(item, {}));
-          logger.info(`New category encountered: ${key}`);
-        }
+      // Remove duplicates
+      parsedData.healthHistory[category as keyof HealthHistory] = 
+        removeDuplicates(parsedData.healthHistory[category as keyof HealthHistory] as any[], 'name') as any;
+
+      if (!dynamicFieldMappings[category]) {
+        logger.info(`New category encountered: ${category}`);
       }
-    }
-
-    // Remove duplicates
-    for (const category of Object.keys(parsedData.healthHistory) as Array<keyof HealthHistory>) {
-      parsedData.healthHistory[category] = removeDuplicates(parsedData.healthHistory[category] as any[], 'name') as any;
     }
 
     // Data quality check
@@ -217,19 +203,16 @@ function checkDataQuality(data: ParsedHealthHistory): string[] {
   return issues;
 }
 
-// Version-specific parsing logic could be added here
-function parseHealthHistoryV2(data: unknown): ParsedHealthHistory {
-  // Implement v2 parsing logic
-  throw new Error('V2 parsing not implemented');
-}
+// Version-specific parsing logic
+const versionedParsers: Record<string, (data: unknown) => ParsedHealthHistory> = {
+  v1: parseHealthHistory,
+  // Add more version-specific parsers as needed
+};
 
 export function parseHealthHistoryVersioned(data: unknown, version: string): ParsedHealthHistory {
-  switch (version) {
-    case 'v1':
-      return parseHealthHistory(data);
-    case 'v2':
-      return parseHealthHistoryV2(data);
-    default:
-      throw new Error(`Unsupported version: ${version}`);
+  const parser = versionedParsers[version];
+  if (!parser) {
+    throw new Error(`Unsupported version: ${version}`);
   }
+  return parser(data);
 }

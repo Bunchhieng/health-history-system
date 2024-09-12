@@ -13,7 +13,7 @@ This application consists of a Next.js frontend and an Express.js backend for ma
 
 1. Clone the repository:
    ```
-   git clone https://github.com/Bunchhieng/health-history-system
+   git clone https://github.com/Bunchhieng/health-history-system.git
    cd health-history-system
    ```
 
