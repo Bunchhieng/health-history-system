@@ -80,3 +80,7 @@ Our health history parser is designed to handle and normalize data from various 
 10. Extract and standardize metadata from health records.
 
 11. Add tests :)
+
+## High Level Design (HLD)
+
+![Sequence Diagram](diagram.png "Health History System Architecture")
